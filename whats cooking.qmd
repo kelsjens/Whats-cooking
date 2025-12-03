@@ -1,0 +1,81 @@
+---
+title: "Whats Cooking"
+format: pdf
+editor: visual
+---
+
+# Load libraries
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(vroom)
+library(dplyr)
+library(tune)
+library(ggplot2)
+library(embed)
+library(doParallel)
+library(kknn)
+library(discrim)
+library(remotes)
+library(jsonlite)
+```
+
+# Read Data
+
+```{r}
+trainSet <- read_file("C:/Users/User/OneDrive - Brigham Young University/Fall 2025/STAT 348/whats-cooking/train.json/train.json") %>% 
+  fromJSON()
+testSet <- read_file("C:/Users/User/OneDrive - Brigham Young University/Fall 2025/STAT 348/whats-cooking/test.json/test.json") %>%
+  fromJSON()
+```
+
+# Recipe
+
+```{r}
+library(textrecipes)
+recipe <- recipe(cuisine ~ ingredients, data = trainSet) %>% 
+  step_mutate(ingredients = tokenlist(ingredients)) %>%
+  step_tokenfilter(ingredients, max_tokens=2500) %>%
+  step_tfidf(ingredients)
+```
+
+# simple model
+
+```{r}
+library(tidymodels)
+library(purrr)
+library(stringr)
+library(readr)
+library(dplyr)
+
+# 2. Model spec (multinomial regression for classification)
+cuisine_model <- multinom_reg(mode = "classification") %>% 
+  set_engine("nnet", MaxNWts = 100000, trace = FALSE)
+
+# 3. Workflow
+wf <- workflow() %>% 
+  add_model(cuisine_model) %>% 
+  add_recipe(recipe)
+
+# 4. Fit on trainSet
+wf_fit <- wf %>% 
+  fit(data = trainSet)
+
+# 5. Predict classes for testSet
+test_pred_class <- predict(wf_fit, new_data = testSet, type = "class")
+
+# 6. Kaggle submission: id + predicted cuisine
+submission <- testSet %>% 
+  select(id) %>% 
+  mutate(cuisine = test_pred_class$.pred_class)
+
+write_csv(submission, "submission.csv")
+
+```
+
+# Feature engineering
+
+```{r}
+
+```
