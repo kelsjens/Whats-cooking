@@ -35,19 +35,18 @@ testSet <- read_file("C:/Users/User/OneDrive - Brigham Young University/Fall 202
 ```{r}
 library(textrecipes)
 recipe <- recipe(cuisine ~ ingredients, data = trainSet) %>% 
+  # convert list-column to tokenlist
   step_mutate(ingredients = tokenlist(ingredients)) %>%
-  step_tokenfilter(ingredients, max_tokens=2500) %>%
+  # keep at most 500 most frequent ingredients
+  step_tokenfilter(ingredients, max_tokens = 500) %>%
+  # create TF-IDF features
   step_tfidf(ingredients)
 ```
 
 # simple model
 
 ```{r}
-library(tidymodels)
-library(purrr)
-library(stringr)
-library(readr)
-library(dplyr)
+
 
 # 2. Model spec (multinomial regression for classification)
 cuisine_model <- multinom_reg(mode = "classification") %>% 
@@ -74,8 +73,33 @@ write_csv(submission, "submission.csv")
 
 ```
 
-# Feature engineering
+# Random forest
 
 ```{r}
+rf_spec <- rand_forest(
+  mtry  = 10,     # you can tune this later
+  trees = 150,
+  min_n = 5
+) %>% 
+  set_mode("classification") %>% 
+  set_engine("ranger", importance = "impurity")
+
+wf <- workflow() %>% 
+  add_recipe(recipe) %>% 
+  add_model(rf_spec)
+
+rf_fit <- wf %>% 
+  fit(data = trainSet)
+
+# predicted cuisine labels
+test_pred_class <- predict(rf_fit, new_data = testSet, type = "class")
+
+submission <- testSet %>% 
+  select(id) %>% 
+  mutate(cuisine = test_pred_class$.pred_class)
+
+write_csv(submission, "submission_rf_tfidf.csv")
 
 ```
+
+in tuning grid add argument control(save pred = true, verbosen
