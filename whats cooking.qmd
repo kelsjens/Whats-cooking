@@ -30,17 +30,44 @@ testSet <- read_file("C:/Users/User/OneDrive - Brigham Young University/Fall 202
   fromJSON()
 ```
 
+# Cleaning
+
+```{r}
+trainSet <- trainSet %>%
+  mutate(
+    # feature 1: number of ingredients
+    n_ingredients = map_int(ingredients, length),
+
+    # feature 2: average ingredient name length
+    avg_ing_length = map_dbl(ingredients, ~ mean(str_length(.x))),
+
+    # feature 3: any rice in the recipe?
+    has_rice = map_int(ingredients, ~ any(str_detect(.x, "rice"))),
+
+    # text column for tokenization (space-separated ingredients)
+    ingredients_text = map_chr(ingredients, ~ paste(.x, collapse = " "))
+  )
+
+testSet <- testSet %>%
+  mutate(
+    n_ingredients = map_int(ingredients, length),
+    avg_ing_length = map_dbl(ingredients, ~ mean(str_length(.x))),
+    has_rice = map_int(ingredients, ~ any(str_detect(.x, "rice"))),
+    ingredients_text = map_chr(ingredients, ~ paste(.x, collapse = " "))
+  )
+
+```
+
 # Recipe
 
 ```{r}
 library(textrecipes)
-recipe <- recipe(cuisine ~ ingredients, data = trainSet) %>% 
-  # convert list-column to tokenlist
-  step_mutate(ingredients = tokenlist(ingredients)) %>%
-  # keep at most 500 most frequent ingredients
-  step_tokenfilter(ingredients, max_tokens = 500) %>%
-  # create TF-IDF features
-  step_tfidf(ingredients)
+rec <- recipe(cuisine ~ ingredients_text + n_ingredients + avg_ing_length + has_rice,
+              data = trainSet) %>%
+  step_tokenize(ingredients_text) %>%
+  step_tokenfilter(ingredients_text, max_tokens = 1000) %>%  # keep vocab small
+  step_tf(ingredients_text) %>%
+  step_normalize(all_numeric_predictors())
 ```
 
 # simple model
@@ -76,27 +103,23 @@ write_csv(submission, "submission.csv")
 # Random forest
 
 ```{r}
-rf_spec <- rand_forest(
-  mtry  = 10,     # you can tune this later
-  trees = 150,
-  min_n = 5
-) %>% 
-  set_mode("classification") %>% 
+cuisine_model <- rand_forest(trees = 500) %>%
+  set_mode("classification") %>%
   set_engine("ranger", importance = "impurity")
 
-wf <- workflow() %>% 
-  add_recipe(recipe) %>% 
-  add_model(rf_spec)
+wf <- workflow() %>%
+  add_model(cuisine_model) %>%
+  add_recipe(rec)
 
-rf_fit <- wf %>% 
+wf_fit <- wf %>%
   fit(data = trainSet)
 
-# predicted cuisine labels
-test_pred_class <- predict(rf_fit, new_data = testSet, type = "class")
+test_pred_class <- predict(wf_fit, new_data = testSet, type = "class")
 
-submission <- testSet %>% 
-  select(id) %>% 
-  mutate(cuisine = test_pred_class$.pred_class)
+submission <- tibble(
+  id      = testSet$id,
+  cuisine = test_pred_class$.pred_class
+)
 
 write_csv(submission, "submission_rf_tfidf.csv")
 
